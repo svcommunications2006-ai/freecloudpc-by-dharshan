@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Clear terminal screen
+clear
+echo "================================="
+echo "   TERMUX P2P PIN CHAT TOOL"
+echo "================================="
+echo ""
+
+# Helper function to generate a unique PIN format: XXXXXX XXX
+generate_pin() {
+    local port=$1
+    # Obfuscate the local port into a 9 digit looking PIN
+    # 782000 + port, then split with a space
+    local part1=$((782000 + port))
+    local part2=$((100 + RANDOM % 900))
+    echo "${part1} ${part2}"
+}
+
+# Helper function to decode a PIN back to a port
+decode_pin() {
+    local pin_str=$1
+    local part1=$(echo "$pin_str" | awk '{print $1}')
+    local port=$((part1 - 782000))
+    echo "$port"
+}
+
+echo "1. Host a Chat Room (Get a PIN)"
+echo "2. Connect to a Friend (Enter a PIN)"
+read -p "Select an option (1/2): " choice
+
+if [ "$choice" == "1" ]; then
+    # Generate a random local port between 4000 and 9000
+    LOCAL_PORT=$((4000 + RANDOM % 5000))
+    PIN=$(generate_pin $LOCAL_PORT)
+    
+    echo ""
+    echo "Creating secure chat room..."
+    echo "---------------------------------"
+    echo "Your Chat PIN is: $PIN"
+    echo "Share this PIN with your friend."
+    echo "---------------------------------"
+    echo "Waiting for your friend to connect..."
+    
+    # Open a local netcat listener and tunnel it to the internet via serveo.net
+    # This creates a bridge so your friend can connect from anywhere globally
+    ssh -R ${LOCAL_PORT}:localhost:${LOCAL_PORT} serveo.net 2>/dev/null &
+    SSH_PID=$!
+    
+    # Start the local listening server
+    nc -l -p $LOCAL_PORT
+    
+    # Clean up background process on exit
+    kill $SSH_PID 2>/dev/null
+
+elif [ "$choice" == "2" ]; then
+    echo ""
+    read -p "Enter your friend's PIN (e.g., 782987 323): " user_pin
+    
+    # Decode the PIN to find the remote port destination
+    REMOTE_PORT=$(decode_pin "$user_pin")
+    
+    echo "Connecting to room via port $REMOTE_PORT..."
+    echo "Connected! Type your message and press Enter. Press Ctrl+C to exit."
+    echo "------------------------------------------------------------------"
+    
+    # Connect directly to the bridged serveo port
+    nc serveo.net $REMOTE_PORT
+
+else
+    echo "Invalid option. Exiting."
+    exit 1
+fi
